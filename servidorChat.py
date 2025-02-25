@@ -14,6 +14,7 @@ transacoes_validadas = []  # Lista de transações já validadas
 clientes_conectados = {}   # Dicionário para armazenar informações dos clientes
 bits_zero = 0              # Número de bits zero iniciais esperados no hash
 janela_validacao = 1000000 # Tamanho da janela de validação para cada cliente
+validacao_lock = threading.Lock()  # Lock para evitar condições de corrida na validação
 
 # Função para calcular o hash SHA256 de uma transação com um nonce
 def calcular_hash(nonce, transacao):
@@ -33,6 +34,24 @@ def broadcast_mensagem(mensagem, conn_excecao=None):
     for conn in clientes_conectados:
         if conn != conn_excecao:  # Não envia a mensagem para o próprio cliente
             enviar_mensagem(conn, mensagem)
+
+# Função para validar o nonce enviado pelo cliente
+def validar_nonce(nonce, transacao, conn):
+    global transacoes_pendentes, transacoes_validadas
+
+    with validacao_lock:  # Garante que apenas um cliente valide o nonce por vez
+        hash_resultado = calcular_hash(nonce, transacao)
+        if hash_resultado.startswith("0" * bits_zero):
+            # Nonce válido: notifica todos os clientes e atualiza as listas
+            transacoes_validadas.append((transacao, nonce, clientes_conectados[conn]["nome"]))
+            transacoes_pendentes.remove(transacao)
+            broadcast_mensagem(f"TRANSACAO_VALIDADA:{transacao}:{nonce}:{clientes_conectados[conn]['nome']}")
+            enviar_mensagem(conn, "NONCE_VALIDO:Você encontrou o nonce correto!")
+            print(f"Transação '{transacao}' validada pelo cliente {clientes_conectados[conn]['nome']} com nonce {nonce}.")
+        else:
+            # Nonce inválido: notifica apenas o cliente
+            enviar_mensagem(conn, "NONCE_INVALIDO:O nonce enviado é inválido.")
+            print(f"Cliente {clientes_conectados[conn]['nome']} enviou um nonce inválido para a transação '{transacao}'.")
 
 # Função para processar as conexões dos clientes
 def processar_cliente(conn, addr):
@@ -69,14 +88,7 @@ def processar_cliente(conn, addr):
                 # Processa o nonce encontrado pelo cliente
                 _, nonce, transacao = msg.split(":")
                 nonce = int(nonce)
-                hash_resultado = calcular_hash(nonce, transacao)
-                if hash_resultado.startswith("0" * bits_zero):
-                    # Adiciona a transação à lista de validadas
-                    transacoes_validadas.append((transacao, nonce, clientes_conectados[conn]["nome"]))
-                    transacoes_pendentes.remove(transacao)  # Remove a transação da lista de pendentes
-                    broadcast_mensagem(f"TRANSACAO_VALIDADA:{transacao}:{nonce}:{clientes_conectados[conn]['nome']}")
-                else:
-                    enviar_mensagem(conn, "NONCE_INVALIDO")
+                validar_nonce(nonce, transacao, conn)  # Valida o nonce
         except Exception as e:
             print(f"Erro no cliente {addr}: {e}")
             break

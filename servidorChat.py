@@ -5,7 +5,7 @@ import hashlib
 import requests
 
 # Configurações do Telegram
-TELEGRAM_TOKEN = "8022479701:AAG0FL1L59S3WBtYRrVmiWu4aVNaJIdXeMc"
+TELEGRAM_TOKEN = "TOKEN"
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 # Configurações do servidor

@@ -2,273 +2,210 @@ import socket
 import threading
 import time
 import hashlib
+import ssl
+import struct
 import requests
 
-# Configurações do Telegram
-TELEGRAM_TOKEN = "TOKEN"
-TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
+HOST = "0.0.0.0"
+PORT = 31471
+WINDOW_SIZE = 1000
+TIMEOUT = 60
 
-# Configurações do servidor
-HOST = 'localhost'
-PORTA = 31471
+BOT_TOKEN = "8022479701:AAG0FL1L59S3WBtYRrVmiWu4aVNaJIdXeMc"
+TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/"
+TELEGRAM_CHAT_IDS = []
 
-# Estruturas de dados para armazenar transações e clientes
-transacoes_pendentes = []  # Lista para armazenar transações pendentes de validação
-transacoes_validadas = []  # Lista para armazenar transações validadas
-clientes = {}  # Dicionário para armazenar informações dos clientes
-tamanho_janela = 1000000  # Tamanho da janela de validação
+transacoes_pendentes = []
+transacoes_validadas = []
+clientes = {}
+lock = threading.Lock()
 
-# Lock para evitar condições de corrida durante a validação do nonce
-validacao_lock = threading.Lock()
-
-# Função para adicionar uma nova transação
-def adicionar_transacao(transacao, bits_zero):
-    transacoes_pendentes.append((transacao, bits_zero))
-    print(f"Transação '{transacao}' adicionada com {bits_zero} bits zero.")
-
-# Função para distribuir transações para clientes
-def distribuir_transacao(conexao_cliente, endereco_cliente):
-    if len(transacoes_pendentes) > 0:
-        transacao, bits_zero = transacoes_pendentes[0]  # Pega a primeira transação da lista
-        clientes_validando = len([c for c in clientes.values() if c.get('transacao') == transacao])
-        inicio_janela = clientes_validando * tamanho_janela
-        fim_janela = (clientes_validando + 1) * tamanho_janela - 1
-        
-        # Codifica os números em big endian
-        bits_zero_bytes = bits_zero.to_bytes(4, 'big')
-        clientes_validando_bytes = clientes_validando.to_bytes(4, 'big')
-        inicio_janela_bytes = inicio_janela.to_bytes(8, 'big')
-        fim_janela_bytes = fim_janela.to_bytes(8, 'big')
-        
-        # Envia a transação, bits zero, número de clientes validando e janela de validação
-        resposta = (
-            len(transacao).to_bytes(2, 'big') + transacao.encode('utf-8') +
-            bits_zero_bytes + clientes_validando_bytes + inicio_janela_bytes + fim_janela_bytes
-        )
-        conexao_cliente.sendall(resposta)
-        
-        # Atualiza o estado do cliente
-        clientes[endereco_cliente] = {
-            'transacao': transacao,
-            'inicio_janela': inicio_janela,
-            'fim_janela': fim_janela,
-            'ultima_solicitacao': time.time(),
-            'conexao': conexao_cliente  # Armazena a conexão do cliente
-        }
-    else:
-        # Não há transações pendentes
-        conexao_cliente.sendall(b"SEM_TRANSACOES")
-
-# Função para verificar se o nonce é válido
-def verificar_nonce(transacao, nonce, bits_zero):
-    # Concatena o nonce com a transação e calcula o hash SHA256
-    dados = nonce + transacao.encode('utf-8')
+def validar_nonce(transacao, nonce, bits):
+    dados = nonce.to_bytes(4, 'big') + transacao.encode("utf-8")
     hash_resultado = hashlib.sha256(dados).hexdigest()
-    
-    # Verifica se o hash começa com a quantidade de bits zero esperada
-    return hash_resultado.startswith('0' * bits_zero)
+    hash_binario = bin(int(hash_resultado, 16))[2:].zfill(256)
+    return hash_binario.startswith("0" * bits)
 
-# Função para validar a transação
-def validar_transacao(conexao_cliente, endereco_cliente, nonce):
-    with validacao_lock:  # Usa o lock para evitar condições de corrida
-        if endereco_cliente not in clientes:
-            return False
+def aceitar_clientes():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as servidor:
+        servidor.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        servidor.bind((HOST, PORT))
+        servidor.listen()
+        print(f"[Servidor] Aguardando conexões na porta {PORT}...")
         
-        transacao = clientes[endereco_cliente]['transacao']
-        bits_zero = next(bz for trans, bz in transacoes_pendentes if trans == transacao)
-        
-        # Verifica se o nonce é válido
-        if verificar_nonce(transacao, nonce, bits_zero):
-            # Adiciona a transação à lista de validadas
-            transacoes_validadas.append((transacao, nonce, endereco_cliente))
-            # Remove a transação da lista de pendentes
-            transacoes_pendentes[:] = [(trans, bz) for trans, bz in transacoes_pendentes if trans != transacao]
-            
-            # Notifica todos os clientes para parar a mineração
-            for cliente, info in list(clientes.items()):
-                if cliente != endereco_cliente:
-                    try:
-                        info['conexao'].sendall(b"PARAR_MINERACAO")
-                    except Exception as e:
-                        print(f"Falha ao notificar cliente {cliente}: {e}")
-                        # Remove o cliente se a conexão falhar
-                        if cliente in clientes:
-                            del clientes[cliente]
-            
-            # Notifica o cliente vencedor
-            conexao_cliente.sendall(b"VALIDACAO_SUCESSO")
-            return True
-        else:
-            # Notifica o cliente que o nonce é inválido
-            conexao_cliente.sendall(b"NONCE_INVALIDO")
-            return False
+        while True:
+            conn, addr = servidor.accept()
+            with lock:
+                clientes[addr] = None
+            print(f"[Novo cliente conectado] {addr}")
+            threading.Thread(target=gerenciar_cliente, args=(conn, addr)).start()
 
-# Função para gerenciar a conexão com o cliente
-def gerenciar_cliente(conexao_cliente, endereco_cliente):
-    print(f'Novo cliente conectado: {endereco_cliente}')
-    clientes[endereco_cliente] = {
-        'conexao': conexao_cliente,
-        'ultima_solicitacao': time.time()
-    }
-    
-    while True:
-        try:
-            # Recebe o tipo de solicitação (2 bytes)
-            tipo_solicitacao = conexao_cliente.recv(2)
-            if not tipo_solicitacao:
+def gerenciar_cliente(conn, addr):
+    try:
+        while True:
+            data = conn.recv(1024)
+            if not data:
                 break
-            
-            tipo_solicitacao = int.from_bytes(tipo_solicitacao, 'big')
-            
-            if tipo_solicitacao == 1:  # SOLICITAR_TRANSACAO
-                distribuir_transacao(conexao_cliente, endereco_cliente)
-            elif tipo_solicitacao == 2:  # VALIDAR_TRANSACAO
-                nonce = conexao_cliente.recv(4)  # Nonce é 4 bytes
-                validar_transacao(conexao_cliente, endereco_cliente, nonce)
-            else:
-                conexao_cliente.sendall(b"SOLICITACAO_INVALIDA")
-            
-            # Atualiza o tempo da última solicitação
-            clientes[endereco_cliente]['ultima_solicitacao'] = time.time()
-        except Exception as e:
-            print(f"Erro ao processar solicitação do cliente {endereco_cliente}: {e}")
-            break
-    
-    print(f"Cliente {endereco_cliente} desconectado.")
-    if endereco_cliente in clientes:
-        del clientes[endereco_cliente]
-    conexao_cliente.close()
 
-# Função para monitorar clientes inativos
-def monitorar_clientes():
-    while True:
-        time.sleep(60)  # Verifica a cada 60 segundos
-        tempo_atual = time.time()
-        for endereco_cliente in list(clientes.keys()):
-            if tempo_atual - clientes[endereco_cliente]['ultima_solicitacao'] > 60:
-                print(f"Fechando conexão com cliente inativo: {endereco_cliente}")
-                if endereco_cliente in clientes:
-                    del clientes[endereco_cliente]
+            tipo_mensagem = data[0]
+            if tipo_mensagem == ord('G'):
+                nome_cliente = data[1:11].decode('utf-8').strip()
+                with lock:
+                    if transacoes_pendentes:
+                        transacao, bits, clientes_validando = transacoes_pendentes[0]
+                        nonce_inicio = clientes_validando * WINDOW_SIZE
+                        clientes_validando += 1
+                        transacoes_pendentes[0] = (transacao, bits, clientes_validando)
+                        clientes[addr] = (transacao, nonce_inicio, nonce_inicio + WINDOW_SIZE - 1)
+                        # Envia a Mensagem T com os detalhes da transação
+                        resposta = b'T'  # Tipo da mensagem (1 byte)
+                        resposta += struct.pack('>H', 1)  # numTransação (2 bytes)
+                        resposta += struct.pack('>H', clientes_validando)  # numCliente (2 bytes)
+                        resposta += struct.pack('>I', WINDOW_SIZE)  # tamJanela (4 bytes)
+                        resposta += struct.pack('>B', bits)  # bitsZero (1 byte)
+                        resposta += struct.pack('>I', len(transacao))  # tamTransação (4 bytes)
+                        resposta += transacao.encode('utf-8')  # transação (tamTransação bytes)
+                    else:
+                        resposta = b'W'  # Mensagem W (Wait)
+                conn.sendall(resposta)
+            elif tipo_mensagem == ord('S'):
+                num_transacao = int.from_bytes(data[1:3], 'big')
+                nonce = int.from_bytes(data[3:7], 'big')
+                with lock:
+                    transacao, bits, _ = transacoes_pendentes[0]
+                    if validar_nonce(transacao, nonce, bits):
+                        transacoes_validadas.append((transacao, bits, nonce, addr))
+                        transacoes_pendentes.pop(0)
+                        conn.sendall(b'V' + num_transacao.to_bytes(2, 'big'))
+                        for cliente in clientes:
+                            if cliente != addr:
+                                conn.sendall(b'I' + num_transacao.to_bytes(2, 'big'))
+                    else:
+                        conn.sendall(b'R' + num_transacao.to_bytes(2, 'big'))
+    except Exception as e:
+        print(f"[Erro] Conexão perdida com {addr}: {e}")
+    finally:
+        conn.close()
+        with lock:
+            clientes.pop(addr, None)
+        print(f"[Desconectado] {addr} saiu.")
 
-# Função para interação com o usuário
-def interacao_usuario():
+def exibir_menu():
+    print("/newtrans /validtrans /pendtrans /clients sair ")
+
+def interface_usuario():
     while True:
-        comando = input("> ")
+        exibir_menu()
+        comando = input("Digite um comando: ")
         if comando == "/newtrans":
-            transacao = input("Informe a transação: ")
-            bits_zero = int(input("Informe o número de bits zero esperados: "))
-            adicionar_transacao(transacao, bits_zero)
+            transacao = input("Digite a transação: ")
+            bits = int(input("Digite a quantidade de bits zero desejados: "))
+            with lock:
+                transacoes_pendentes.append((transacao, bits, 0))
+                print(f"[Nova transação] {transacao} adicionada com {bits} bits zero.")
         elif comando == "/validtrans":
-            print("Transações validadas:")
-            if len(transacoes_validadas) == 0:
-                print("Nenhuma transação validada até o momento.")
-            else:
-                for trans, nonce, cliente in transacoes_validadas:
-                    print(f"Transação: {trans}, Nonce: {nonce}, Validado por: {cliente}")
+            with lock:
+                if transacoes_validadas:
+                    for t in transacoes_validadas:
+                        print(f"Transação: {t[0]}, Bits: {t[1]}, Nonce: {t[2]}, Cliente: {t[3]}")
+                else:
+                    print("Nenhuma transação validada ainda.")
         elif comando == "/pendtrans":
-            print("Transações pendentes:")
-            if len(transacoes_pendentes) == 0:
-                print("Nenhuma transação pendente no momento.")
-            else:
-                for trans, bits_zero in transacoes_pendentes:
-                    clientes_validando = [cliente for cliente, info in clientes.items() if info.get('transacao') == trans]
-                    print(f"Transação: {trans}, Bits zero: {bits_zero}, Clientes validando: {clientes_validando}")
+            with lock:
+                if transacoes_pendentes:
+                    for t in transacoes_pendentes:
+                        print(f"Transação: {t[0]}, Bits: {t[1]}, Clientes validando: {t[2]}")
+                else:
+                    print("Nenhuma transação pendente.")
         elif comando == "/clients":
-            print("Clientes conectados:")
-            if len(clientes) == 0:
-                print("Nenhum cliente conectado no momento.")
-            else:
-                for endereco_cliente, info in clientes.items():
-                    transacao = info.get('transacao', 'Nenhuma')
-                    inicio_janela = info.get('inicio_janela', 0)
-                    fim_janela = info.get('fim_janela', 0)
-                    print(f"Cliente: {endereco_cliente}, Transação: {transacao}, Janela: {inicio_janela}-{fim_janela}")
+            with lock:
+                if clientes:
+                    for addr, t in clientes.items():
+                        if t:
+                            print(f"Cliente {addr} validando {t[0]} ({t[1]}-{t[2]})")
+                        else:
+                            print(f"Cliente {addr} conectado, mas sem transação atribuída.")
+                else:
+                    print("Nenhum cliente conectado.")
+        elif comando.lower() == "sair":
+            print("Encerrando o servidor...")
+            break
         else:
-            print("Comando inválido. Comandos disponíveis: /newtrans, /validtrans, /pendtrans, /clients")
+            print("Comando não reconhecido. Tente novamente.")
 
-# Função para interação com o Telegram
-def interacao_telegram():
+def enviar_mensagem_telegram(chat_id, mensagem):
+    url = f"{TELEGRAM_API_URL}sendMessage"
+    params = {
+        "chat_id": chat_id,
+        "text": mensagem
+    }
+    try:
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            print(f"[Telegram] Mensagem enviada para o chat {chat_id}.")
+        else:
+            print(f"[Telegram] Erro ao enviar mensagem: {response.text}")
+    except Exception as e:
+        print(f"[Telegram] Erro na comunicação com a API: {e}")
+
+def processar_comando_telegram(comando, chat_id):
+    if comando == "/validtrans":
+        with lock:
+            if transacoes_validadas:
+                mensagem = "Transações validadas:\n"
+                for t in transacoes_validadas:
+                    mensagem += f"Transação: {t[0]}, Bits: {t[1]}, Nonce: {t[2]}, Cliente: {t[3]}\n"
+            else:
+                mensagem = "Nenhuma transação validada ainda."
+        enviar_mensagem_telegram(chat_id, mensagem)
+    elif comando == "/pendtrans":
+        with lock:
+            if transacoes_pendentes:
+                mensagem = "Transações pendentes:\n"
+                for t in transacoes_pendentes:
+                    mensagem += f"Transação: {t[0]}, Bits: {t[1]}, Clientes validando: {t[2]}\n"
+            else:
+                mensagem = "Nenhuma transação pendente."
+        enviar_mensagem_telegram(chat_id, mensagem)
+    elif comando == "/clients":
+        with lock:
+            if clientes:
+                mensagem = "Clientes conectados:\n"
+                for addr, t in clientes.items():
+                    if t:
+                        mensagem += f"Cliente {addr} validando {t[0]} ({t[1]}-{t[2]})\n"
+                    else:
+                        mensagem += f"Cliente {addr} conectado, mas sem transação atribuída.\n"
+            else:
+                mensagem = "Nenhum cliente conectado."
+        enviar_mensagem_telegram(chat_id, mensagem)
+    else:
+        enviar_mensagem_telegram(chat_id, "Comando não reconhecido. Use /validtrans, /pendtrans ou /clients.")
+
+def monitorar_telegram():
     offset = 0
     while True:
+        url = f"{TELEGRAM_API_URL}getUpdates"
+        params = {"offset": offset, "timeout": 30}
         try:
-            # Obtém as atualizações do Telegram
-            response = requests.get(f"{TELEGRAM_API_URL}/getUpdates", params={"offset": offset, "timeout": 30})
-            updates = response.json().get("result", [])
-            
-            for update in updates:
-                offset = update["update_id"] + 1
-                message = update.get("message", {})
-                chat_id = message.get("chat", {}).get("id")
-                text = message.get("text", "").strip()
-                
-                if text == "/validtrans":
-                    resposta = "Transações validadas:\n"
-                    if len(transacoes_validadas) == 0:
-                        resposta += "Nenhuma transação validada até o momento."
-                    else:
-                        for trans, nonce, cliente in transacoes_validadas:
-                            resposta += f"Transação: {trans}, Nonce: {nonce}, Validado por: {cliente}\n"
-                    requests.post(f"{TELEGRAM_API_URL}/sendMessage", json={"chat_id": chat_id, "text": resposta})
-                
-                elif text == "/pendtrans":
-                    resposta = "Transações pendentes:\n"
-                    if len(transacoes_pendentes) == 0:
-                        resposta += "Nenhuma transação pendente no momento."
-                    else:
-                        for trans, bits_zero in transacoes_pendentes:
-                            clientes_validando = [cliente for cliente, info in clientes.items() if info.get('transacao') == trans]
-                            resposta += f"Transação: {trans}, Bits zero: {bits_zero}, Clientes validando: {clientes_validando}\n"
-                    requests.post(f"{TELEGRAM_API_URL}/sendMessage", json={"chat_id": chat_id, "text": resposta})
-                
-                elif text == "/clients":
-                    resposta = "Clientes conectados:\n"
-                    if len(clientes) == 0:
-                        resposta += "Nenhum cliente conectado no momento."
-                    else:
-                        for endereco_cliente, info in clientes.items():
-                            transacao = info.get('transacao', 'Nenhuma')
-                            inicio_janela = info.get('inicio_janela', 0)
-                            fim_janela = info.get('fim_janela', 0)
-                            resposta += f"Cliente: {endereco_cliente}, Transação: {transacao}, Janela: {inicio_janela}-{fim_janela}\n"
-                    requests.post(f"{TELEGRAM_API_URL}/sendMessage", json={"chat_id": chat_id, "text": resposta})
-                
-                else:
-                    requests.post(f"{TELEGRAM_API_URL}/sendMessage", json={"chat_id": chat_id, "text": "Comando inválido. Comandos disponíveis: /validtrans, /pendtrans, /clients"})
-        
+            response = requests.get(url, params=params)
+            if response.status_code == 200:
+                updates = response.json().get("result", [])
+                for update in updates:
+                    offset = update["update_id"] + 1
+                    chat_id = update["message"]["chat"]["id"]
+                    texto = update["message"]["text"]
+                    processar_comando_telegram(texto, chat_id)
         except Exception as e:
-            print(f"Erro ao processar mensagem do Telegram: {e}")
+            print(f"[Telegram] Erro ao monitorar mensagens: {e}")
+        time.sleep(1)
 
-# Função principal do servidor
-def main():
-    try:
-        # Cria o socket do servidor
-        sock = socket.socket()
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind((HOST, PORTA))
-        sock.listen()
-        print(f"Servidor escutando em {HOST}:{PORTA}...")
-    except OSError as e:
-        print(f"Erro ao iniciar o servidor: {e}")
-        sys.exit(2)
-    
-    # Inicia a thread para monitorar clientes inativos
-    threading.Thread(target=monitorar_clientes, daemon=True).start()
-    
-    # Inicia a thread para interação com o usuário
-    threading.Thread(target=interacao_usuario, daemon=True).start()
-    
-    # Inicia a thread para interação com o Telegram
-    threading.Thread(target=interacao_telegram, daemon=True).start()
-    
-    while True:
-        try:
-            conexao, endereco = sock.accept()
-            threading.Thread(target=gerenciar_cliente, args=(conexao, endereco)).start()
-        except Exception as e:
-            print(f"Erro ao aceitar conexão: {e}")
-            break
-    
-    sock.close()
-
-if __name__ == "__main__":
-    main()
+t1 = threading.Thread(target=aceitar_clientes)
+t2 = threading.Thread(target=interface_usuario)
+t3 = threading.Thread(target=monitorar_telegram)
+t1.start()
+t2.start()
+t3.start()
+t1.join()
+t2.join()
+t3.join()

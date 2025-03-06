@@ -6,27 +6,29 @@ import ssl
 import struct
 import requests
 
-HOST = "0.0.0.0"
-PORT = 31471
-WINDOW_SIZE = 1000
-TIMEOUT = 60
+HOST = "0.0.0.0"  # endereço que o servidor escuta
+PORT = 31471  # porta do servidor
+WINDOW_SIZE = 1000000  # tamanho da janela para o nonce
+TIMEOUT = 60  # tempo limite para operações
 
-BOT_TOKEN = "8022479701:AAG0FL1L59S3WBtYRrVmiWu4aVNaJIdXeMc"
-TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/"
-TELEGRAM_CHAT_IDS = []
+BOT_TOKEN = "8022479701:AAG0FL1L59S3WBtYRrVmiWu4aVNaJIdXeMc"  # token do bot do Telegram
+TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/"  # URL da API do Telegram
+TELEGRAM_CHAT_IDS = []  # IDs dos chats do Telegram
 
-transacoes_pendentes = []
-transacoes_validadas = []
-clientes = {}
-lock = threading.Lock()
+transacoes_pendentes = []  # lista de transações pendentes
+transacoes_validadas = []  # lista de transações validadas
+clientes = {}  # dicionário de clientes conectados
+lock = threading.Lock()  # lock para garantir acesso seguro a recursos compartilhados
 
 def validar_nonce(transacao, nonce, bits):
+    # verifica se o nonce é válido para a transação dada
     dados = nonce.to_bytes(4, 'big') + transacao.encode("utf-8")
     hash_resultado = hashlib.sha256(dados).hexdigest()
     hash_binario = bin(int(hash_resultado, 16))[2:].zfill(256)
     return hash_binario.startswith("0" * bits)
 
 def aceitar_clientes():
+    # aceita conexões de clientes
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as servidor:
         servidor.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         servidor.bind((HOST, PORT))
@@ -41,6 +43,7 @@ def aceitar_clientes():
             threading.Thread(target=gerenciar_cliente, args=(conn, addr)).start()
 
 def gerenciar_cliente(conn, addr):
+    # gerencia a comunicação com um cliente
     try:
         while True:
             data = conn.recv(1024)
@@ -57,16 +60,9 @@ def gerenciar_cliente(conn, addr):
                         clientes_validando += 1
                         transacoes_pendentes[0] = (transacao, bits, clientes_validando)
                         clientes[addr] = (transacao, nonce_inicio, nonce_inicio + WINDOW_SIZE - 1)
-                        # Envia a Mensagem T com os detalhes da transação
-                        resposta = b'T'  # Tipo da mensagem (1 byte)
-                        resposta += struct.pack('>H', 1)  # numTransação (2 bytes)
-                        resposta += struct.pack('>H', clientes_validando)  # numCliente (2 bytes)
-                        resposta += struct.pack('>I', WINDOW_SIZE)  # tamJanela (4 bytes)
-                        resposta += struct.pack('>B', bits)  # bitsZero (1 byte)
-                        resposta += struct.pack('>I', len(transacao))  # tamTransação (4 bytes)
-                        resposta += transacao.encode('utf-8')  # transação (tamTransação bytes)
+                        resposta = b'T' + struct.pack('>H', 1) + struct.pack('>H', clientes_validando) + struct.pack('>I', WINDOW_SIZE) + struct.pack('>B', bits) + struct.pack('>I', len(transacao)) + transacao.encode('utf-8')
                     else:
-                        resposta = b'W'  # Mensagem W (Wait)
+                        resposta = b'W'
                 conn.sendall(resposta)
             elif tipo_mensagem == ord('S'):
                 num_transacao = int.from_bytes(data[1:3], 'big')
@@ -91,9 +87,11 @@ def gerenciar_cliente(conn, addr):
         print(f"[Desconectado] {addr} saiu.")
 
 def exibir_menu():
+    # exibe opções de comando para o usuário
     print("/newtrans /validtrans /pendtrans /clients sair ")
 
 def interface_usuario():
+    # gerencia a interface do usuário
     while True:
         exibir_menu()
         comando = input("Digite um comando: ")
@@ -134,6 +132,7 @@ def interface_usuario():
             print("Comando não reconhecido. Tente novamente.")
 
 def enviar_mensagem_telegram(chat_id, mensagem):
+    # envia uma mensagem para um chat no Telegram
     url = f"{TELEGRAM_API_URL}sendMessage"
     params = {
         "chat_id": chat_id,
@@ -149,6 +148,7 @@ def enviar_mensagem_telegram(chat_id, mensagem):
         print(f"[Telegram] Erro na comunicação com a API: {e}")
 
 def processar_comando_telegram(comando, chat_id):
+    #processa comandos recebidos pelo telegram
     if comando == "/validtrans":
         with lock:
             if transacoes_validadas:
@@ -183,6 +183,7 @@ def processar_comando_telegram(comando, chat_id):
         enviar_mensagem_telegram(chat_id, "Comando não reconhecido. Use /validtrans, /pendtrans ou /clients.")
 
 def monitorar_telegram():
+    #monitora mensagens recebidas do telegram
     offset = 0
     while True:
         url = f"{TELEGRAM_API_URL}getUpdates"
@@ -200,12 +201,12 @@ def monitorar_telegram():
             print(f"[Telegram] Erro ao monitorar mensagens: {e}")
         time.sleep(1)
 
-t1 = threading.Thread(target=aceitar_clientes)
-t2 = threading.Thread(target=interface_usuario)
-t3 = threading.Thread(target=monitorar_telegram)
-t1.start()
-t2.start()
-t3.start()
-t1.join()
-t2.join()
+t1 = threading.Thread(target=aceitar_clientes)  
+t2 = threading.Thread(target=interface_usuario)  
+t3 = threading.Thread(target=monitorar_telegram)  
+t1.start()  
+t2.start()  
+t3.start()  
+t1.join()  
+t2.join()  
 t3.join()

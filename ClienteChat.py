@@ -3,18 +3,16 @@ import threading
 import sys
 import hashlib
 
-host = 'localhost'  # endereço do servidor
-porta = 31471  # porta do servidor
-tcp_sock = None  # socket TCP global
+host = 'localhost'  
+porta = 31471  
+tcp_sock = None  
 
-def enviar_mensagem_get(nome_cliente):
-    # envia uma mensagem para o servidor solicitando a transação
+def enviar_mensagem_get(nome_cliente):   # envia uma mensagem para o servidor solicitando a transação
     nome_cliente = nome_cliente.ljust(10)[:10]
     mensagem = b'G' + nome_cliente.encode('utf-8')
     tcp_sock.sendall(mensagem)
 
-def processar_mensagem_transacao(data):
-    # processa a mensagem de transação recebida do servidor
+def processar_mensagem_transacao(data):    # processa a mensagem de transação recebida do servidor
     num_transacao = int.from_bytes(data[0:2], 'big')
     num_cliente = int.from_bytes(data[2:4], 'big')
     tam_janela = int.from_bytes(data[4:8], 'big')
@@ -24,13 +22,11 @@ def processar_mensagem_transacao(data):
     print(f"Transação recebida: {transacao}, Bits: {bits_zero}, Janela: {tam_janela}")
     return num_transacao, num_cliente, tam_janela, bits_zero, transacao
 
-def enviar_mensagem_submit(num_transacao, nonce):
-    # envia uma mensagem de submissão de nonce ao servidor
+def enviar_mensagem_submit(num_transacao, nonce):    # envia uma mensagem de submissão de nonce ao servidor
     mensagem = b'S' + num_transacao.to_bytes(2, 'big') + nonce.to_bytes(4, 'big')
     tcp_sock.sendall(mensagem)
 
-def processar_mensagem_validacao(data):
-    # processa mensagens de validação recebidas do servidor
+def processar_mensagem_validacao(data):    # processa mensagens de validação recebidas do servidor
     tipo_mensagem = data[0]
     num_transacao = int.from_bytes(data[1:3], 'big')
     if tipo_mensagem == ord('V'):
@@ -43,8 +39,7 @@ def processar_mensagem_validacao(data):
         print("Servidor encerrou a conexão. Saindo...")
         sys.exit(0)
 
-def serverMessages():
-    # escuta mensagens do servidor
+def servermsg():  # escuta mensagens do servidor
     while True:
         try:
             data = tcp_sock.recv(1024)
@@ -62,7 +57,7 @@ def serverMessages():
                 transacao = data[14:14+tam_transacao].decode('utf-8')
                 print(f"Transação recebida: {transacao}, Bits: {bits_zero}, Janela: {tam_janela}")
 
-                nonce_inicio = num_cliente * tam_janela
+                nonce_inicio = (num_cliente - 1) * tam_janela
                 nonce_fim = nonce_inicio + tam_janela - 1
                 print(f"Procurando nonce entre {nonce_inicio} e {nonce_fim}...")
 
@@ -95,7 +90,7 @@ def startClient():
 
 # Inicia o cliente
 startClient()
-thread_server = threading.Thread(target=serverMessages)
+thread_server = threading.Thread(target=servermsg)
 thread_server.start()
 
 try:

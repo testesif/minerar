@@ -1,0 +1,44 @@
+ClienteChat.py
+Funções Principais:
+enviar_mensagem_get(nome_cliente):
+
+Propósito: Envia uma mensagem ao servidor solicitando uma transação.
+
+Detalhes: A função formata o nome do cliente para ocupar exatamente 10 bytes (preenchendo com espaços se necessário) e envia uma mensagem com o prefixo 'G' (indicando uma solicitação de transação) seguido do nome do cliente.
+
+processar_mensagem_transacao(data):
+
+Propósito: Processa a mensagem de transação recebida do servidor.
+
+Detalhes: A função extrai informações como o número da transação, número do cliente, tamanho da janela, bits zero, tamanho da transação e a própria transação. Essas informações são impressas no console.
+
+enviar_mensagem_submit(num_transacao, nonce):
+
+Propósito: Envia uma mensagem de submissão de nonce ao servidor.
+
+Detalhes: A função envia uma mensagem com o prefixo 'S' (indicando submissão de nonce), seguido do número da transação e do nonce encontrado.
+
+processar_mensagem_validacao(data):
+
+Propósito: Processa mensagens de validação recebidas do servidor.
+
+Detalhes: A função verifica o tipo de mensagem recebida ('V' para validação, 'R' para rejeição, 'I' para validação por outro cliente, 'Q' para encerramento da conexão) e imprime a mensagem correspondente no console.
+
+servermsg():
+
+Propósito: Escuta mensagens do servidor e processa as respostas.
+
+Detalhes: A função fica em um loop infinito recebendo mensagens do servidor. Dependendo do tipo de mensagem, ela chama as funções apropriadas para processar a transação ou a validação. Se uma transação for recebida, a função tenta encontrar um nonce válido dentro da janela especificada.
+
+startClient():
+
+Propósito: Inicia o cliente e conecta ao servidor.
+
+Detalhes: A função cria um socket TCP, conecta-se ao servidor e envia uma mensagem de solicitação de transação. Se a conexão falhar, o programa é encerrado.
+
+Corpo do Código:
+Inicialização do Cliente: O cliente é iniciado chamando startClient(), que estabelece a conexão com o servidor.
+
+Thread de Recebimento de Mensagens: Uma thread é criada para executar a função servermsg(), que fica escutando mensagens do servidor.
+
+Tratamento de Interrupção: O código captura interrupções de teclado (Ctrl-C) para fechar a conexão de forma adequada.

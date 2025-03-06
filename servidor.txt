@@ -1,0 +1,66 @@
+servidorChat.py
+Funções Principais:
+validar_nonce(transacao, nonce, bits):
+
+Propósito: Verifica se o nonce enviado pelo cliente é válido para a transação.
+
+Detalhes: A função calcula o hash SHA-256 da combinação do nonce e da transação e verifica se o hash começa com o número especificado de bits zero.
+
+aceitar_clientes():
+
+Propósito: Aceita conexões de clientes e inicia uma thread para gerenciar cada cliente.
+
+Detalhes: A função cria um socket TCP, escuta conexões e, para cada nova conexão, inicia uma thread que executa a função gerenciar_cliente.
+
+gerenciar_cliente(conn, addr):
+
+Propósito: Gerencia a comunicação com um cliente específico.
+
+Detalhes: A função recebe mensagens do cliente e as processa. Se o cliente solicitar uma transação ('G'), o servidor envia uma transação pendente. Se o cliente enviar um nonce ('S'), o servidor valida o nonce e responde ao cliente.
+
+exibir_menu():
+
+Propósito: Exibe um menu de comandos disponíveis para o usuário do servidor.
+
+Detalhes: A função imprime os comandos disponíveis, como adicionar uma nova transação, listar transações validadas, listar transações pendentes e listar clientes conectados.
+
+interface_usuario():
+
+Propósito: Interface de linha de comando para o servidor.
+
+Detalhes: A função fica em um loop infinito esperando por comandos do usuário e executa as ações correspondentes, como adicionar transações ou listar informações.
+
+enviar_mensagem_telegram(chat_id, mensagem):
+
+Propósito: Envia uma mensagem para um chat do Telegram.
+
+Detalhes: A função usa a API do Telegram para enviar mensagens para um chat específico.
+
+processar_comando_telegram(comando, chat_id):
+
+Propósito: Processa comandos recebidos via Telegram.
+
+Detalhes: A função verifica o comando recebido e envia a resposta correspondente, como listar transações validadas ou pendentes.
+
+monitorar_telegram():
+
+Propósito: Monitora mensagens recebidas no Telegram e processa comandos.
+
+Detalhes: A função fica em um loop infinito verificando novas mensagens no Telegram e chamando processar_comando_telegram para cada comando recebido.
+
+Corpo do Código:
+Inicialização do Servidor: O servidor é iniciado com três threads principais:
+
+aceitar_clientes() para aceitar novas conexões de clientes.
+
+interface_usuario() para permitir interação com o usuário via linha de comando.
+
+monitorar_telegram() para monitorar e responder a comandos recebidos via Telegram.
+
+Threads: As threads são iniciadas e aguardadas para garantir que o servidor continue funcionando enquanto houver clientes conectados e comandos a serem processados.
+
+Resumo Geral:
+ClienteChat.py: O cliente se conecta ao servidor, solicita transações, tenta encontrar um nonce válido e envia o nonce de volta ao servidor para validação. O cliente também processa respostas do servidor, como validações ou rejeições.
+
+servidorChat.py: O servidor gerencia conexões de clientes, distribui transações pendentes, valida nonces enviados pelos clientes e mantém uma lista de transações validadas e pendentes. O servidor também oferece uma interface de linha de comando e suporte a comandos via Telegram para monitorar o estado das transações e clientes.
+

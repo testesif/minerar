@@ -8,7 +8,7 @@ import requests
 
 HOST = "localhost"
 PORT = 31471  
-WINDOW_SIZE = 100000
+JANELA = 100000
 TIMEOUT = 60  
 
 BOT_TOKEN = "8022479701:AAG0FL1L59S3WBtYRrVmiWu4aVNaJIdXeMc"  
@@ -53,11 +53,11 @@ def gerenciar_cliente(conn, addr): #faz a verificação do protocolo, verifica t
                 with lock:
                     if transacoes_pendentes:
                         transacao, bits, clientes_validando = transacoes_pendentes[0]
-                        nonce_inicio = clientes_validando * WINDOW_SIZE
+                        nonce_inicio = clientes_validando * JANELA
                         clientes_validando += 1
                         transacoes_pendentes[0] = (transacao, bits, clientes_validando)
-                        clientes[addr] = (transacao, nonce_inicio, nonce_inicio + WINDOW_SIZE - 1)
-                        resposta = b'T' + struct.pack('>H', 1) + struct.pack('>H', clientes_validando) + struct.pack('>I', WINDOW_SIZE) + struct.pack('>B', bits) + struct.pack('>I', len(transacao)) + transacao.encode('utf-8')
+                        clientes[addr] = (transacao, nonce_inicio, nonce_inicio + JANELA - 1)
+                        resposta = b'T' + struct.pack('>H', 1) + struct.pack('>H', clientes_validando) + struct.pack('>I', JANELA) + struct.pack('>B', bits) + struct.pack('>I', len(transacao)) + transacao.encode('utf-8')
                     else:
                         resposta = b'W'
                 conn.sendall(resposta)

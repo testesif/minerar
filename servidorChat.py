@@ -88,7 +88,7 @@ def gerenciar_cliente(conn, addr): #faz a verificação do protocolo, verifica t
 def exibir_menu():
     print("/newtrans /validtrans /pendtrans /clients sair ")
 
-def interface_usuario():
+def interface_usuario(): #menu do usuario dentro do servidor
     while True:
         exibir_menu()
         comando = input("Digite um comando: ")
@@ -143,8 +143,7 @@ def enviar_mensagem_telegram(chat_id, mensagem):
     except Exception as e:
         print(f"Telegram: Erro na comunicação com a API: {e}")
 
-def processar_comando_telegram(comando, chat_id):
-    # processa comandos recebidos pelo Telegram
+def menu_telegram(comando, chat_id): #menu do telegram
     if comando == "/validtrans":
         with lock:
             if transacoes_validadas:
@@ -191,7 +190,7 @@ def monitorar_telegram():
                     offset = update["update_id"] + 1
                     chat_id = update["message"]["chat"]["id"]
                     texto = update["message"]["text"]
-                    processar_comando_telegram(texto, chat_id)
+                    menu_telegram(texto, chat_id)
         except Exception as e:
             print(f"Telegram: Erro ao monitorar mensagens: {e}")
         time.sleep(1)

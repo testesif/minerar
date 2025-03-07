@@ -12,7 +12,7 @@ def enviar_mensagem_get(nome_cliente):   # envia uma mensagem para o servidor so
     mensagem = b'G' + nome_cliente.encode('utf-8')
     tcp_sock.sendall(mensagem)
 
-def processar_mensagem_transacao(data):    # processa a mensagem de transação recebida do servidor
+def mensagem_transacao(data):    # processa a mensagem de transação recebida do servidor
     num_transacao = int.from_bytes(data[0:2], 'big')
     num_cliente = int.from_bytes(data[2:4], 'big')
     tam_janela = int.from_bytes(data[4:8], 'big')
@@ -26,7 +26,7 @@ def enviar_mensagem_submit(num_transacao, nonce):    # envia uma mensagem de sub
     mensagem = b'S' + num_transacao.to_bytes(2, 'big') + nonce.to_bytes(4, 'big')
     tcp_sock.sendall(mensagem)
 
-def processar_mensagem_validacao(data):    # processa mensagens de validação recebidas do servidor
+def mensagem_validacao(data):    # processa mensagens de validação recebidas do servidor
     tipo_mensagem = data[0]
     num_transacao = int.from_bytes(data[1:3], 'big')
     if tipo_mensagem == ord('V'):
@@ -39,7 +39,7 @@ def processar_mensagem_validacao(data):    # processa mensagens de validação r
         print("Servidor encerrou a conexão...")
         sys.exit(0)
 
-def servermsg():  # escuta mensagens do servidor
+def servermsg():  # escuta mensagens do servidor com o protocolo e faz a verificação de nonce
     while True:
         try:
             data = tcp_sock.recv(1024)
@@ -70,7 +70,7 @@ def servermsg():  # escuta mensagens do servidor
                         enviar_mensagem_submit(num_transacao, nonce)
                         break
             elif tipo_mensagem in [ord('V'), ord('R'), ord('I'), ord('Q')]:
-                processar_mensagem_validacao(data)
+                mensagem_validacao(data)
         except Exception as e:
             print(f"Erro ao receber mensagem do servidor: {e}")
             break

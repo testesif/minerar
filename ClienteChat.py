@@ -3,8 +3,8 @@ import threading
 import sys
 import hashlib
 
-host = 'localhost'  
-porta = 31471  
+HOST = 'localhost'  
+PORT= 31471  
 tcp_sock = None  
 
 def enviar_mensagem_get(nome_cliente):   # envia uma mensagem para o servidor solicitando a transação
@@ -80,8 +80,8 @@ def startClient():
     global tcp_sock
     try:
         tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        tcp_sock.connect((host, porta))
-        print(f"Conectado ao servidor em {host}:{porta}")
+        tcp_sock.connect((HOST, PORT))
+        print(f"Conectado ao servidor em {HOST}:{PORT}")
         enviar_mensagem_get("Cliente1")
     except Exception as e:
         print(f"Falha na conexão ao servidor: {e}")

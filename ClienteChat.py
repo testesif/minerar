@@ -36,7 +36,7 @@ def processar_mensagem_validacao(data):    # processa mensagens de validação r
     elif tipo_mensagem == ord('I'):
         print(f"Transação {num_transacao} foi validada por outro cliente.")
     elif tipo_mensagem == ord('Q'):
-        print("Servidor encerrou a conexão. Saindo...")
+        print("Servidor encerrou a conexão...")
         sys.exit(0)
 
 def servermsg():  # escuta mensagens do servidor

@@ -31,16 +31,16 @@ def aceitar_clientes():
         servidor.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         servidor.bind((HOST, PORT))
         servidor.listen()
-        print(f"[Servidor] Aguardando conexões na porta {PORT}...")
+        print(f"Servidor: Aguardando conexões na porta {PORT}...")
         
         while True:
             conn, addr = servidor.accept()
             with lock:
                 clientes[addr] = None
-            print(f"[Novo cliente conectado] {addr}")
+            print(f"Novo cliente conectado  {addr}")
             threading.Thread(target=gerenciar_cliente, args=(conn, addr)).start()
 
-def gerenciar_cliente(conn, addr):
+def gerenciar_cliente(conn, addr): #faz a verificação do protocolo, verifica trans pendente 
     try:
         while True:
             data = conn.recv(1024)
@@ -77,9 +77,9 @@ def gerenciar_cliente(conn, addr):
                         conn.sendall(b'R' + num_transacao.to_bytes(2, 'big'))
     except ConnectionResetError:
         # Captura o erro específico de conexão resetada (WinError 10054)
-        print(f"[Desconectado] {addr} saiu.")
+        print(f"Desconectado {addr} saiu.")
     except Exception as e:
-        print(f"[Erro] Conexão perdida com {addr}: {e}")
+        print(f"Erro Conexão perdida com {addr}: {e}")
     finally:
         conn.close()
         with lock:
@@ -94,10 +94,10 @@ def interface_usuario():
         comando = input("Digite um comando: ")
         if comando == "/newtrans":
             transacao = input("Digite a transação: ")
-            bits = int(input("Digite a quantidade de bits zero desejados: "))
+            bits = int(input("Digite a quantidade de bits zero: "))
             with lock:
                 transacoes_pendentes.append((transacao, bits, 0))
-                print(f"[Nova transação] {transacao} adicionada com {bits} bits zero.")
+                print(f"Nova transação {transacao} adicionada com {bits} bits zero.")
         elif comando == "/validtrans":
             with lock:
                 if transacoes_validadas:
@@ -137,11 +137,11 @@ def enviar_mensagem_telegram(chat_id, mensagem):
     try:
         response = requests.get(url, params=params)
         if response.status_code == 200:
-            print(f"[Telegram] Mensagem enviada para o chat {chat_id}.")
+            print(f"Telegram: Mensagem enviada para o chat {chat_id}.")
         else:
-            print(f"[Telegram] Erro ao enviar mensagem: {response.text}")
+            print(f"Telegram: Erro ao enviar mensagem: {response.text}")
     except Exception as e:
-        print(f"[Telegram] Erro na comunicação com a API: {e}")
+        print(f"Telegram: Erro na comunicação com a API: {e}")
 
 def processar_comando_telegram(comando, chat_id):
     # processa comandos recebidos pelo Telegram
@@ -193,7 +193,7 @@ def monitorar_telegram():
                     texto = update["message"]["text"]
                     processar_comando_telegram(texto, chat_id)
         except Exception as e:
-            print(f"[Telegram] Erro ao monitorar mensagens: {e}")
+            print(f"Telegram: Erro ao monitorar mensagens: {e}")
         time.sleep(1)
 
 t1 = threading.Thread(target=aceitar_clientes)  
